@@ -1,0 +1,72 @@
+#!/bin/bash
+# author	nemowen
+# date		2015/10/14
+# description 	shoetree快速发布脚本，只需要将项目中的web目录打包成web.zip文件上传到/data/webroot中，并使用root账号运行此脚本即可！
+
+# check user: only root user can run this shell script
+if [ "root" != `whoami` ]; then
+	echo "请使用root账号运行此命令"
+	exit 0
+fi
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# check file
+if [ -f /data/webroot/web.zip ]; then
+	echo -n "正在解压更新文件..."
+	unzip -qo /data/webroot/web.zip -d /data/webroot/
+	[ 0 = $? ] && echo_success || echo_failure 
+	echo
+else
+	echo "web.zip 目录不存在，请在你本地用zip方式打包你的web目录，并上传到/data/webroot中"
+	exit 1
+fi
+
+# modifiy some files 
+echo -n "正在整理文件..."
+if [ -f /data/webroot/web/WEB-INF/web.xml ]; then
+	sed 's/Development/Production/g' /data/webroot/web/WEB-INF/web.xml > /tmp/web
+	[ -f /tmp/web ] && mv -f /tmp/web /data/webroot/web/WEB-INF/web.xml
+fi
+if [ -f /data/webroot/web/WEB-INF/classes/log4j.properties ]; then
+	sed 's/DEBUG/ERROR/g' /data/webroot/web/WEB-INF/classes/log4j.properties > /tmp/log4j
+	[ -f /tmp/log4j ] && mv -f /tmp/log4j /data/webroot/web/WEB-INF/classes/log4j.properties
+fi
+[ 0 = $? ] && echo_success || echo_failure 
+echo
+
+# backup shoetree
+nowtime=`date +%Y%m%d%H`
+backupfile="shoetree$nowtime"
+if [ -d /data/webroot/shoetree ]; then
+	echo -n "正在在备份上一次项目..."
+	cp -rf "/data/webroot/shoetree" "/usr/local/shoetree_backup/$backupfile"
+	[ 0 = $? ] && echo_success || echo_failure 
+	echo
+else
+	echo -n "shoetree 项目目录不存在"
+	echo_failure
+	echo
+	exit 1
+fi
+
+# stop tomcat service
+service tomcat6 stop
+
+# update project
+echo -n "正在更新项目..."
+rm -rf /data/webroot/shoetree
+mv -f /data/webroot/web /data/webroot/shoetree
+[ 0 = $? ] && echo_success || echo_failure
+echo
+
+# start tomcat service
+service tomcat6 start
+
+# clear up
+echo -n "正在清理文件..."
+rm -f /data/webroot/web.zip
+tar -zPcf "/usr/local/shoetree_backup/$backupfile.tar.gz" "/usr/local/shoetree_backup/$backupfile" --remove-files
+[ 0 = $? ] && echo_success || echo_failure
+echo
